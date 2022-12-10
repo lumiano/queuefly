@@ -1,0 +1,107 @@
+name: Build and publish the container image
+
+"on":
+  push:
+    tags:
+      - '*'
+    branches:
+      - 'main'
+
+jobs:
+  build-and-push-image:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    
+      -
+        name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+    
+      -
+        name: Get tag
+        id: repository
+        run: echo  "::set-output name=tag::$(git describe --tags HEAD)"
+        
+      -
+        name: Setup up Golang
+        uses: actions/setup-go@v3
+        with:
+          go-version-file: "go.mod"
+          
+      - 
+        name: Verify dependencies
+        run: go mod verify
+
+      - 
+        name: Build
+        run: go build -o queuefly -v ./...
+
+      - 
+        name: Run go vet
+        run: go vet ./...
+
+      - 
+        name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+
+      - 
+        name: Run staticcheck
+        run: staticcheck ./...
+
+      - 
+        name: Install golint
+        run: go install golang.org/x/lint/golint@latest
+
+      - 
+        name: Run golint
+        run: golint ./...
+
+#       - 
+#         name: Run tests
+#         run: go test -race -vet=off ./..
+       
+      -
+        name: Setup Golang caches
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-golang-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-golang-
+
+      -
+        name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+   
+      -
+        name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      -
+        name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.APP_NAME }}-${{ secrets.APP_ENVIRONMENT }}-ecr
+          IMAGE_TAG: ${{ steps.repository.outputs.tag }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
