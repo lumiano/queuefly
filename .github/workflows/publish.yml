@@ -42,7 +42,7 @@ jobs:
 
       - 
         name: Build
-        run: go build -o queuefly -v ./...
+        run:  go build -o /tmp/runtime.a runtime
 
       - 
         name: Run go vet
