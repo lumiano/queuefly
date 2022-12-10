@@ -3,7 +3,6 @@ package repositories
 import (
 	"queuefly/lib/data"
 	"queuefly/lib/infra"
-	_ "queuefly/lib/infra"
 )
 
 type UserRepository struct {
